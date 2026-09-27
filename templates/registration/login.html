@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block body_class %}ops-shell soot-login{% endblock %}
+{% block title %}入岗{% endblock %}
+{% block content %}
+<div class="ember-gate">
+  <div class="ember-brand">
+    <p class="ember-kicker">PITCH KILN · FLOOR WATCH</p>
+    <h1>松香灶台值守</h1>
+    <p class="ember-sub">过道点名 · 软化点探针 · 出胶闸门</p>
+  </div>
+  <form method="post" class="ember-form">
+    {% csrf_token %}
+    {% if form.errors %}
+    <p class="toast error">用户名或密码不正确</p>
+    {% endif %}
+    <label for="id_username">工号 / 用户名</label>
+    <input class="field" type="text" name="username" id="id_username" value="admin" autocomplete="username" autofocus required>
+    <label for="id_password">口令</label>
+    <input class="field" type="password" name="password" id="id_password" value="123456" autocomplete="current-password" required>
+    <button class="ember-btn" type="submit">入岗值守</button>
+    <p class="ember-hint">演示：admin / worker · 口令 123456</p>
+  </form>
+</div>
+{% endblock %}

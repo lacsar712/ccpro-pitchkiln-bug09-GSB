@@ -1,0 +1,40 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}灶台值守看板{% endblock %} · PitchKiln</title>
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body class="{% block body_class %}ops-shell{% endblock %}">
+  {% if user.is_authenticated %}
+  <aside class="shift-strip">
+    <a class="mark" href="{% url 'home' %}">Pitch<br>Kiln</a>
+    <nav class="strip-nav">
+      <a href="{% url 'home' %}" class="{% if request.resolver_match.url_name == 'home' %}on{% endif %}" title="值守看板">灶</a>
+      <a href="{% url 'resin_lot_feed' %}" class="{% if request.resolver_match.url_name == 'resin_lot_feed' %}on{% endif %}" title="来脂批">脂</a>
+    </nav>
+    <div class="strip-foot">
+      <span class="who">{{ user.username }}</span>
+      <form method="post" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button type="submit" class="ghost-exit">退</button>
+      </form>
+    </div>
+  </aside>
+  {% endif %}
+
+  <div class="ops-main {% if not user.is_authenticated %}ops-main-solo{% endif %}">
+    {% if messages %}
+    <ul class="toast-rail">
+      {% for message in messages %}
+      <li class="toast {{ message.tags }}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

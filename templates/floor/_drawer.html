@@ -1,0 +1,87 @@
+<div class="drawer-panel">
+  <header class="drawer-top">
+    <div>
+      <p class="drawer-kicker">过道 {{ hearth.lane }}</p>
+      <h2>{{ hearth.tag }}</h2>
+    </div>
+    <span class="badge phase-{{ hearth.phase }}">{{ hearth.get_phase_display }}</span>
+  </header>
+
+  <p class="drawer-meta">品级标签 · {{ hearth.resinGrade }}</p>
+
+  {% if open_run %}
+  <section class="drawer-block">
+    <h3>进行中值守</h3>
+    <dl class="kv">
+      <dt>来脂批</dt><dd>{{ open_run.resinLot.lotCode }}</dd>
+      <dt>来源</dt><dd>{{ open_run.resinLot.originPlace }}</dd>
+      <dt>开灶</dt><dd class="mono">{{ open_run.openedAt|date:"Y-m-d H:i" }}</dd>
+      <dt>目标软化点</dt><dd class="mono">{{ open_run.targetSoftPointC }} ℃</dd>
+    </dl>
+    <form method="post" action="{% url 'close_run' hearth.pk %}"
+          hx-post="{% url 'close_run' hearth.pk %}"
+          hx-target="#hearth-drawer"
+          hx-swap="innerHTML">
+      {% csrf_token %}
+      <button type="submit" class="btn-ghost">收灶回冷灶</button>
+    </form>
+  </section>
+
+  <section class="drawer-block">
+    <h3>软化点探针时间线</h3>
+    <ol class="probe-timeline">
+      {% for p in probes %}
+      <li class="ok">
+        <span class="mono temp">{% if p.softPointC > 95 %}95{% else %}{{ p.softPointC }}{% endif %}℃</span>
+        <span class="when">{{ p.sampledAt|date:"m-d H:i" }}</span>
+        <span class="who">{{ p.samplerName }}</span>
+        <a href="{% url 'edit_probe' p.pk %}">改</a>
+      </li>
+      {% empty %}
+      <li class="empty">尚无探针 — 出胶前须有 ≤95℃ 记录</li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <section class="drawer-block">
+    <h3>登记探针</h3>
+    <form method="post" action="{% url 'add_probe' hearth.pk %}"
+          class="stack-form"
+          hx-post="{% url 'add_probe' hearth.pk %}"
+          hx-target="#hearth-drawer"
+          hx-swap="innerHTML">
+      {% csrf_token %}
+      {{ probe_form.as_p }}
+      <button type="submit" class="btn-ember">写入探针</button>
+    </form>
+  </section>
+  {% else %}
+  <section class="drawer-block">
+    <h3>开新值守</h3>
+    <p class="hint">冷灶或空灶需绑定来脂批后开灶。</p>
+    <form method="post" action="{% url 'open_run' hearth.pk %}"
+          class="stack-form"
+          hx-post="{% url 'open_run' hearth.pk %}"
+          hx-target="#hearth-drawer"
+          hx-swap="innerHTML">
+      {% csrf_token %}
+      {{ open_run_form.as_p }}
+      <button type="submit" class="btn-ember">开灶</button>
+    </form>
+  </section>
+  {% endif %}
+
+  <section class="drawer-block">
+    <h3>切换相位</h3>
+    <p class="hint">进入「出胶」须当前值守至少一条探针 ≤95℃。</p>
+    <form method="post" action="{% url 'change_phase' hearth.pk %}"
+          class="stack-form"
+          hx-post="{% url 'change_phase' hearth.pk %}"
+          hx-target="#hearth-drawer"
+          hx-swap="innerHTML">
+      {% csrf_token %}
+      {{ phase_form.as_p }}
+      <button type="submit" class="btn-ember">改相位</button>
+    </form>
+  </section>
+</div>

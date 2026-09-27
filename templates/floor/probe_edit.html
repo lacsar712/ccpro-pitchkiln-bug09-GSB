@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}编辑探针{% endblock %}
+{% block content %}
+<section class="feed-head">
+  <div>
+    <h1>编辑探针</h1>
+    <p class="board-sub">{{ hearth.tag }}</p>
+  </div>
+  <a class="back-link" href="/?hearth={{ hearth.pk }}">← 回抽屉</a>
+</section>
+<form method="post" class="lot-intake stack-form">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button type="submit" class="btn-ember">保存</button>
+</form>
+{% endblock %}

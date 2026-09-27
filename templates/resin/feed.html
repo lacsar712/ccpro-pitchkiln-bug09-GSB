@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}来脂批{% endblock %}
+{% block content %}
+<section class="feed-head">
+  <div>
+    <h1>来脂批</h1>
+    <p class="board-sub">到货时间线 · 非宽表台账</p>
+  </div>
+  <a class="back-link" href="{% url 'home' %}">← 回值守看板</a>
+</section>
+
+<div class="feed-layout">
+  <form method="post" class="lot-intake stack-form">
+    {% csrf_token %}
+    <h2>登记到货</h2>
+    {{ form.as_p }}
+    <button type="submit" class="btn-ember">写入来脂批</button>
+  </form>
+
+  <ol class="lot-feed">
+    {% for lot in lots %}
+    <li class="lot-card">
+      <div class="lot-code mono">{{ lot.lotCode }}</div>
+      <div class="lot-place">{{ lot.originPlace }}</div>
+      <div class="lot-meta">
+        <span class="mono">{{ lot.arrivalKg }} kg</span>
+        <span>{{ lot.receivedAt|date:"Y-m-d H:i" }}</span>
+      </div>
+    </li>
+    {% empty %}
+    <li class="lot-card empty">暂无来脂批</li>
+    {% endfor %}
+  </ol>
+</div>
+{% endblock %}

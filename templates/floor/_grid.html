@@ -1,0 +1,35 @@
+<div id="floor-grid"
+     class="floor-grid"
+     hx-get="{% url 'floor_grid' %}"
+     hx-trigger="floor-refresh from:body"
+     hx-swap="outerHTML">
+  {% for lane, tiles in lanes %}
+  <div class="lane-row">
+    <div class="lane-label">过道 {{ lane }}</div>
+    <div class="tile-row">
+      {% for h in tiles %}
+      {% with open=h.open_runs_cache.0 %}
+      <button type="button"
+              class="hearth-tile phase-{{ h.phase }}"
+              hx-get="{% url 'hearth_drawer' h.pk %}"
+              hx-target="#hearth-drawer"
+              hx-swap="innerHTML"
+              onclick="document.getElementById('hearth-drawer').classList.add('open')">
+        <span class="tile-tag">{{ h.tag }}</span>
+        <span class="tile-phase">{{ h.get_phase_display }}</span>
+        <span class="tile-grade">{{ h.resinGrade }}</span>
+        {% if open %}
+        <span class="tile-temp mono">目标 {{ open.targetSoftPointC }}℃</span>
+        <span class="tile-lot">{{ open.resinLot.lotCode }}</span>
+        {% else %}
+        <span class="tile-temp mono muted">无开灶</span>
+        {% endif %}
+      </button>
+      {% endwith %}
+      {% endfor %}
+    </div>
+  </div>
+  {% empty %}
+  <p class="board-empty">暂无灶台，请先种子数据</p>
+  {% endfor %}
+</div>
