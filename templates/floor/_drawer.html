@@ -1,4 +1,11 @@
 <div class="drawer-panel">
+  {% if drawer_standalone and messages %}
+  <ul class="toast-rail drawer-toasts">
+    {% for message in messages %}
+    <li class="toast {{ message.tags }}">{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
   <header class="drawer-top">
     <div>
       <p class="drawer-kicker">过道 {{ hearth.lane }}</p>
@@ -31,8 +38,8 @@
     <h3>软化点探针时间线</h3>
     <ol class="probe-timeline">
       {% for p in probes %}
-      <li class="ok">
-        <span class="mono temp">{% if p.softPointC > 95 %}95{% else %}{{ p.softPointC }}{% endif %}℃</span>
+      <li class="{% if p.softPointC > 95 %}hot{% else %}ok{% endif %}">
+        <span class="mono temp">{{ p.softPointC }}℃</span>
         <span class="when">{{ p.sampledAt|date:"m-d H:i" }}</span>
         <span class="who">{{ p.samplerName }}</span>
         <a href="{% url 'edit_probe' p.pk %}">改</a>

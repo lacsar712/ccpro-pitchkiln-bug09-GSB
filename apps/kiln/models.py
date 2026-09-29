@@ -1,4 +1,10 @@
+from decimal import Decimal
+
+from django.core.exceptions import ValidationError
 from django.db import models
+
+SOFT_POINT_MIN = Decimal("40")
+SOFT_POINT_MAX = Decimal("120")
 
 
 class ResinLot(models.Model):
@@ -104,20 +110,27 @@ class SoftPointProbe(models.Model):
         ordering = ["-sampledAt", "-id"]
         verbose_name = "软化点探针"
         verbose_name_plural = "软化点探针"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(
+                    softPointC__gte=SOFT_POINT_MIN,
+                    softPointC__lte=SOFT_POINT_MAX,
+                ),
+                name="soft_point_within_40_120",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.softPointC}℃ by {self.samplerName}"
 
     def clean(self):
-        from django.core.exceptions import ValidationError
-        from decimal import Decimal
-
         super().clean()
         if self.softPointC is None:
             raise ValidationError({"softPointC": "软化点必填"})
-        if self.softPointC < Decimal("40") or self.softPointC > Decimal("120"):
+        if self.softPointC < SOFT_POINT_MIN or self.softPointC > SOFT_POINT_MAX:
             raise ValidationError({"softPointC": "软化点须在 40～120℃ 之间"})
 
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
+        # 先校验、后写库：校验失败时不得留下任何残行。
         self.full_clean()
+        super().save(*args, **kwargs)

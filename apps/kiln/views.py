@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -9,7 +10,6 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
 from .forms import OpenCookRunForm, PhaseChangeForm, ResinLotForm, SoftPointProbeForm
-from decimal import Decimal
 
 from .models import CookRun, FireHearth, ResinLot, SoftPointProbe
 from .services.floor_rules import change_hearth_phase
@@ -47,7 +47,7 @@ def _board_context():
     }
 
 
-def _drawer_context(hearth):
+def _drawer_context(hearth, probe_form=None, standalone=False):
     open_run = hearth.open_run()
     probes = []
     if open_run:
@@ -57,9 +57,39 @@ def _drawer_context(hearth):
         "open_run": open_run,
         "probes": probes,
         "phase_form": PhaseChangeForm(hearth=hearth),
-        "probe_form": SoftPointProbeForm() if open_run else None,
+        # 校验失败时回传绑定表单（带字段错误），成功/初次打开给空白表单
+        "probe_form": probe_form if probe_form is not None
+        else (SoftPointProbeForm() if open_run else None),
         "open_run_form": OpenCookRunForm(hearth=hearth) if open_run is None else None,
+        # HTMX 局部刷新时消息不在 base 页框里，需在抽屉内自行展示
+        "drawer_standalone": standalone,
     }
+
+
+def _probe_save_error(exc):
+    if isinstance(exc, ValidationError):
+        if hasattr(exc, "message_dict"):
+            for msgs in exc.message_dict.values():
+                if msgs:
+                    return str(msgs[0])
+        if getattr(exc, "messages", None):
+            return str(exc.messages[0])
+    return "探针登记失败：软化点超出允许范围（40～120℃）"
+
+
+def _form_errors_to_messages(request, form):
+    for field, errs in form.errors.items():
+        label = form.fields[field].label if field in form.fields else None
+        messages.error(request, f"{label or '输入'}：{errs[0]}")
+
+
+def _drawer_response(request, hearth, probe_form=None):
+    resp = render(
+        request, "floor/_drawer.html",
+        _drawer_context(hearth, probe_form=probe_form, standalone=True),
+    )
+    resp["HX-Trigger"] = "floor-refresh"
+    return resp
 
 
 @login_required
@@ -87,9 +117,11 @@ def floor_grid_partial(request):
 @login_required
 def hearth_drawer(request, pk):
     hearth = get_object_or_404(FireHearth, pk=pk)
-    ctx = _drawer_context(hearth)
     if _wants_htmx(request):
-        return render(request, "floor/_drawer.html", ctx)
+        return render(
+            request, "floor/_drawer.html",
+            _drawer_context(hearth, standalone=True),
+        )
     return redirect(f"/?hearth={pk}")
 
 
@@ -113,9 +145,7 @@ def change_phase(request, pk):
 
     if _wants_htmx(request):
         hearth.refresh_from_db()
-        resp = render(request, "floor/_drawer.html", _drawer_context(hearth))
-        resp["HX-Trigger"] = "floor-refresh"
-        return resp
+        return _drawer_response(request, hearth)
     return redirect(f"/?hearth={pk}")
 
 
@@ -126,37 +156,31 @@ def add_probe(request, pk):
     open_run = hearth.open_run()
     if open_run is None:
         messages.error(request, "没有进行中的值守，无法登记探针")
+        if _wants_htmx(request):
+            return _drawer_response(request, hearth)
         return redirect(f"/?hearth={pk}")
 
     form = SoftPointProbeForm(request.POST)
     if form.is_valid():
         probe = form.save(commit=False)
         probe.run = open_run
-        probe.save()
         try:
-            sp = Decimal(str(probe.softPointC))
-            if sp < Decimal("40") or sp > Decimal("120"):
-                raise ValidationError("软化点超出允许范围")
+            with transaction.atomic():
+                # 模型层先校验后写库；任何越界/完整性错误整体回滚，不留残行
+                probe.save()
+        except (ValidationError, IntegrityError) as exc:
+            form.add_error("softPointC", _probe_save_error(exc))
+        else:
             messages.success(request, f"已登记探针 {probe.softPointC}℃")
-        except (ValidationError, Exception) as exc:
-            messages.error(request, str(exc) if str(exc) else "探针校验失败")
-    else:
-        probe = SoftPointProbe(
-            run=open_run,
-            sampledAt=timezone.now(),
-            softPointC=request.POST.get("softPointC") or Decimal("0"),
-            samplerName=request.POST.get("samplerName") or "?",
-        )
-        try:
-            probe.save()
-        except Exception:
-            pass
-        messages.error(request, "探针登记失败，请检查输入")
+
+    if not form.is_valid():
+        _form_errors_to_messages(request, form)
 
     if _wants_htmx(request):
-        resp = render(request, "floor/_drawer.html", _drawer_context(hearth))
-        resp["HX-Trigger"] = "floor-refresh"
-        return resp
+        # 失败时把绑定表单带回抽屉，错误内联展示且绝不新增时间线残行
+        return _drawer_response(
+            request, hearth, probe_form=form if not form.is_valid() else None
+        )
     return redirect(f"/?hearth={pk}")
 
 
@@ -168,21 +192,30 @@ def edit_probe(request, pk):
     if request.method == "POST":
         form = SoftPointProbeForm(request.POST, instance=probe)
         if form.is_valid():
-            obj = form.save(commit=False)
-            obj.save()
             try:
-                sp = Decimal(str(obj.softPointC))
-                if sp < Decimal("40") or sp > Decimal("120"):
-                    raise ValidationError("软化点超出允许范围")
+                with transaction.atomic():
+                    # 先校验后写库：越界时 full_clean 拦截，UPDATE 不会发出，
+                    # 库里原值保持不变，时间线仍只映真实入库读数。
+                    form.save()
+            except (ValidationError, IntegrityError) as exc:
+                form.add_error("softPointC", _probe_save_error(exc))
+            else:
                 messages.success(request, "探针已更新")
-            except (ValidationError, Exception) as exc:
-                messages.error(request, str(exc) if str(exc) else "探针更新校验失败")
-        else:
-            messages.error(request, "探针更新失败")
+
+        if not form.is_valid():
+            _form_errors_to_messages(request, form)
+
         if _wants_htmx(request):
-            resp = render(request, "floor/_drawer.html", _drawer_context(hearth))
-            resp["HX-Trigger"] = "floor-refresh"
-            return resp
+            return _drawer_response(
+                request, hearth, probe_form=form if not form.is_valid() else None
+            )
+        if not form.is_valid():
+            # 非 HTMX 提交失败：留在编辑页，表单带错误、显示用户输入，库内原值未动
+            return render(
+                request,
+                "floor/probe_edit.html",
+                {"form": form, "probe": probe, "hearth": hearth},
+            )
         return redirect(f"/?hearth={hearth.pk}")
     form = SoftPointProbeForm(instance=probe)
     return render(
@@ -213,9 +246,7 @@ def open_run(request, pk):
 
     if _wants_htmx(request):
         hearth.refresh_from_db()
-        resp = render(request, "floor/_drawer.html", _drawer_context(hearth))
-        resp["HX-Trigger"] = "floor-refresh"
-        return resp
+        return _drawer_response(request, hearth)
     return redirect(f"/?hearth={pk}")
 
 
